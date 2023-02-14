@@ -1,3 +1,5 @@
+import os
+print(os.getcwd())
 from rl.distribution import SampledDistribution, Distribution
 from rl.markov_decision_process import MarkovDecisionProcess, NonTerminal, State, Terminal
 from rl.policy import DeterministicPolicy
@@ -69,6 +71,7 @@ class OptimalOptionsExecution:
         class OptimalBinomialTree(MarkovDecisionProcess[float, str]):
             def __init__(self):
                 self.strike_price = 100
+                self.time_steps = steps
             
             def step(
                 self,
@@ -80,9 +83,9 @@ class OptimalOptionsExecution:
                         ) -> Tuple[State[float], float]:
                             next_price: float = price_dynamics[t](prev_price).sample()
                             if action:
-                                # reward for a call option
+                                # reward for a call option if exercise. Obv won't exercise if it's neg
                                 reward: float = (strike_price - next_price) if call_option else (next_price - strike_price)
-                                reward: float = utility_f(reward)
+                                reward: float = utility_f(max(reward, 0))
                                 next_state: State[float] = Terminal(next_price)
                             else:
                                 reward: float = utility_f(0)
@@ -93,7 +96,8 @@ class OptimalOptionsExecution:
                             expectation_samples=100
                         )
             def actions(self, state: NonTerminal[S]) -> Iterable[A]:
-                return [True, False]
+                # always exercise on last step
+                return [True, False] if t < self.time_steps - 1 else [True]
 
         return OptimalBinomialTree()
 
@@ -178,12 +182,16 @@ if __name__ == '__main__':
     print("---------------------------------")
     print()
     for t, (vf, pol) in enumerate(it_vf):
+        if t == num_time_steps-1:
+            exercise: bool = True
+        else:
+            exercise: bool = pol.action_for(state)
         print(f"Time {t:d}")
         print()
-        exercise: bool = pol.action_for(state)
         val: float = vf(NonTerminal(state))
         print(f"Optimal to Exercise = {exercise}, Opt Val = {val:.3f}")
         print()
         print("Optimal Weights below:")
         print(vf.weights.weights)
         print()
+    # When the option is in the money, the optimal policy is to exercise the option for the last time step
